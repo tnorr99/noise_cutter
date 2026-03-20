@@ -1,0 +1,101 @@
+import torch
+import torch.nn as nn
+import torchvision.models as models
+import torchvision.transforms as transforms
+from PIL import Image
+import cv2
+import numpy as np
+from scipy.spatial.distance import cosine
+
+class VideoFeatureExtractor(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Load a pre-trained ResNet18 (Standard for fast feature extraction)
+        weights = models.ResNet18_Weights.DEFAULT
+        resnet = models.resnet18(weights=weights)
+        
+        # Strip the final fully connected classification layer. 
+        # We don't want to know IF it's a dog, we just want the raw 512-dimensional feature vector.
+        self.features = nn.Sequential(*list(resnet.children())[:-1])
+        
+        # Set to evaluation mode (disables dropout, batch norm updates)
+        self.eval()
+
+        # Standard ImageNet preprocessing expected by PyTorch models
+        self.transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+    def forward(self, img_pil):
+        # Preprocess and add a batch dimension: [1, 3, 224, 224]
+        img_tensor = self.transform(img_pil).unsqueeze(0)
+        
+        with torch.no_grad(): # Don't track gradients during inference
+            vec = self.features(img_tensor)
+            
+        # Flatten the output to a 1D vector of length 512
+        return vec.view(-1).numpy()
+
+def get_video_embeddings(video_path, extractor, frame_skip=30):
+    """Extracts deep features from video frames."""
+    cap = cv2.VideoCapture(video_path)
+    embeddings = []
+    frame_count = 0
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        if frame_count % frame_skip == 0:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(frame_rgb)
+            
+            # Extract the 512-d vector instead of a hash
+            vec = extractor(pil_image)
+            embeddings.append(vec)
+            
+        frame_count += 1
+
+    cap.release()
+    return embeddings
+
+def compare_deep_embeddings(source_embeds, target_embeds, threshold=0.85):
+    """
+    Compares two lists of embeddings using Cosine Similarity.
+    Cosine similarity ranges from -1 to 1. A score closer to 1 means identical.
+    """
+    matches = 0
+    
+    for v1 in source_embeds:
+        for v2 in target_embeds:
+            # Scipy calculates cosine distance (1 - similarity), so we invert it
+            similarity = 1 - cosine(v1, v2)
+            
+            if similarity >= threshold:
+                matches += 1
+                break 
+                
+    if len(source_embeds) == 0:
+        return 0
+        
+    match_percentage = (matches / len(source_embeds)) * 100
+    return match_percentage
+
+if __name__ == "__main__":
+    print("Loading PyTorch Model...")
+    extractor = VideoFeatureExtractor()
+
+    # 1. Index Dataset
+    print("Extracting features from original video...")
+    original_embeddings = get_video_embeddings("original_copyright_video.mp4", extractor)
+
+    # 2. Analyze Suspect
+    print("Extracting features from suspect video...")
+    suspect_embeddings = get_video_embeddings("suspect_upscaled_video.mp4", extractor)
+
+    # 3. Compare
+    similarity = compare_deep_embeddings(suspect_embeddings, original_embeddings)
+    print(f"Deep Feature Match Score: {similarity:.2f}%")
