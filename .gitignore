@@ -1,0 +1,56 @@
+# ==========================================
+# 1. Project-Specific Data & Executables
+# ==========================================
+# Ignore all massive video files, datasets, and search indices.
+# Pushing these would immediately exceed Git's file size limits.
+/data/
+/F:/realesrgan_temp/  # Just in case temporary SSD paths get linked
+
+# Ignore heavy third-party executables and AI models downloaded for the Red Team
+realesrgan-ncnn-vulkan.exe
+*.pth
+*.pt
+*.onnx
+*.weights
+
+# ==========================================
+# 2. Python & Environments
+# ==========================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments - Ignore all common virtual environment directories and files
+.env
+.venv
+env/
+venv/
+ENV/
+
+# ==========================================
+# 3. Jupyter Notebooks & IDEs
+# ==========================================
+# Ignore the checkpoints and virtual document clutter you experienced earlier
+.ipynb_checkpoints/
+.virtual_documents/
+
+# VS Code / PyCharm settings (Optional, but keeps the repo clean for others)
+.vscode/
+.idea/
+
+# ==========================================
+# 4. OS & Cloud Sync (Windows/OneDrive)
+# ==========================================
+# Ignore Windows thumbnail caches and folder config files
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+
+# Ignore temporary files often created by OneDrive sync issues
+*.tmp
+*.bak
+*.swp
+*~
