@@ -15,6 +15,7 @@ numpy = "*"
 scipy = "*"
 pillow = "*"
 imagehash = "*"
+python-dotenv = "*"
 # Specifying the index ensures it pulls the GPU-enabled version
 torch = {version = "*", index = "pytorch"}
 torchvision = {version = "*", index = "pytorch"}
