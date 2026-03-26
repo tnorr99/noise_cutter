@@ -41,25 +41,22 @@ class VideoTripletDataset(Dataset):
         return Image.fromarray(frame_rgb)
 
     def __getitem__(self, idx):
-        # 1. Select the Anchor/Positive video folder
-        anchor_folder = self.video_folders[idx]
-        anchor_path = os.path.join(anchor_folder, "original.mp4")
-        positive_path = os.path.join(anchor_folder, "upscaled.mp4")
+        # 1. Anchor/Positive from the same timestamp
+        target_folder = self.video_folders[idx]
+        anchor_path = os.path.join(target_folder, "original.mp4")
+        positive_path = os.path.join(target_folder, "upscaled.mp4")
         
-        # 2. Select a Random Negative video folder
-        negative_folder = random.choice(self.video_folders)
-        while negative_folder == anchor_folder: 
-            negative_folder = random.choice(self.video_folders)
-        negative_path = os.path.join(negative_folder, "original.mp4")
-
-        # 3. Pick a random frame index to extract (adds data augmentation/variety)
         target_frame = random.randint(0, self.frame_skip)
+        
+        # 2. Hard Negative: Same video, but a drastically different frame
+        # Jump ahead by 100 frames (roughly 4 seconds at 25fps) to ensure the scene changed slightly
+        negative_frame = target_frame + 100 
+        negative_path = anchor_path # Use the original video for the negative
 
-        # 4. Extract Images
+        # 3. Extract Images
         anchor_img = self._extract_frame(anchor_path, target_frame)
         positive_img = self._extract_frame(positive_path, target_frame)
-        negative_img = self._extract_frame(negative_path, target_frame)
-
+        negative_img = self._extract_frame(negative_path, negative_frame)
         # 5. Apply PyTorch Transforms (Resizing, Normalization)
         if self.transform:
             anchor_img = self.transform(anchor_img)
