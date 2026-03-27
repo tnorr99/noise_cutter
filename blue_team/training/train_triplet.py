@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
+import torch.nn.functional as F
 
 # Assuming your loader and model are saved as discussed in the project structure
 import sys
@@ -70,6 +71,11 @@ def train_model():
             embed_anchor = model.features(anchor).view(anchor.size(0), -1)
             embed_positive = model.features(positive).view(positive.size(0), -1)
             embed_negative = model.features(negative).view(negative.size(0), -1)
+
+            # L2 Normalize the vectors ---
+            embed_anchor = F.normalize(embed_anchor, p=2, dim=1)
+            embed_positive = F.normalize(embed_positive, p=2, dim=1)
+            embed_negative = F.normalize(embed_negative, p=2, dim=1)
 
             # Calculate Loss
             loss = triplet_loss_fn(embed_anchor, embed_positive, embed_negative)
