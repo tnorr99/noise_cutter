@@ -9,10 +9,10 @@ import torchvision.transforms as transforms
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from blue_team.data_loaders.triplet_loader import VideoTripletDataset
-from blue_team.models.resnet_extractor import VideoFeatureExtractor
+from blue_team.models.DML import VideoFeatureExtractor
 
 # --- Configuration ---
-DATASET_DIR = r"C:\Users\tnorr\OneDrive\Documents\AI\noise_cutter\data\triplet_dataset"
+DATASET_DIR = r"C:\Users\tnorr\OneDrive\Documents\AI\noise_cutter\data\triplet_dataset\NFLX\ref"
 CHECKPOINT_DIR = r"C:\Users\tnorr\OneDrive\Documents\AI\noise_cutter\blue_team\training\checkpoints"
 
 BATCH_SIZE = 16  # Adjust based on your RTX 2060 Super's VRAM limits
@@ -33,9 +33,9 @@ def train_model():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Initializing training on: {device}")
 
-    # 2. Prepare Data
     transform = transforms.Compose([
-        transforms.Resize((224, 224)),
+        # RandomResizedCrop simulates looking at different "grid" scales of the image
+        transforms.RandomResizedCrop(size=(224, 224), scale=(0.3, 1.0)), 
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
@@ -44,7 +44,7 @@ def train_model():
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
 
     # 3. Initialize Model, Loss, and Optimizer
-    model = VideoFeatureExtractor().to(device)
+    model = VideoFeatureExtractor(pretrained=False).to(device)
     model.train() # Set to training mode
 
     triplet_loss_fn = nn.TripletMarginLoss(margin=1.0, p=2)
