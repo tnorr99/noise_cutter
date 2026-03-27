@@ -45,14 +45,19 @@ class VideoTripletDataset(Dataset):
         target_folder = self.video_folders[idx]
         anchor_path = os.path.join(target_folder, "original.mp4")
         positive_path = os.path.join(target_folder, "upscaled.mp4")
-        
-        target_frame = random.randint(0, self.frame_skip)
-        
-        # 2. Hard Negative: Same video, but a drastically different frame
-        # Jump ahead by 100 frames (roughly 4 seconds at 25fps) to ensure the scene changed slightly
-        negative_frame = target_frame + 100 
-        negative_path = anchor_path # Use the original video for the negative
+       
+        # THE FIX: Safely check the actual video length
+        cap = cv2.VideoCapture(anchor_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
 
+        # Ensure we don't ask for a frame that doesn't exist
+        max_start = min(self.frame_skip, max(0, total_frames - 105))
+        target_frame = random.randint(0, max_start) if max_start > 0 else 0
+        
+        # Hard Negative: Same video, jump ahead 100 frames (safely capped)
+        negative_frame = min(target_frame + 100, total_frames - 1)
+        negative_path = anchor_path
         # 3. Extract Images
         anchor_img = self._extract_frame(anchor_path, target_frame)
         positive_img = self._extract_frame(positive_path, target_frame)
