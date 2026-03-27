@@ -47,7 +47,7 @@ def train_model():
     model = VideoFeatureExtractor(pretrained=False).to(device)
     model.train() # Set to training mode
 
-    triplet_loss_fn = nn.TripletMarginLoss(margin=1.0, p=2)
+    triplet_loss_fn = nn.TripletMarginLoss(margin=0.2, p=2)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     best_loss = float('inf')
