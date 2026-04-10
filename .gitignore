@@ -6,12 +6,29 @@
 /data/
 /F:/realesrgan_temp/  # Just in case temporary SSD paths get linked
 
+# Ignore video and raw video files (large artifacts, never commit)
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.webm
+*.flv
+*.wmv
+*.yuv
+*.y4m
+
+# Ignore dataset directories and large dataset CSVs
+kinetics/
+kinetics400_train.csv
+
 # Ignore heavy third-party executables and AI models downloaded for the Red Team
+red_team/realesrgan/
 realesrgan-ncnn-vulkan.exe
 *.pth
 *.pt
 *.onnx
 *.weights
+*.bin
 
 # ==========================================
 # 2. Python & Environments
