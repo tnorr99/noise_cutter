@@ -54,3 +54,8 @@ desktop.ini
 *.bak
 *.swp
 *~
+
+# Ignore Claude Prompting Folder
+.claude
+
+# ==========================================
