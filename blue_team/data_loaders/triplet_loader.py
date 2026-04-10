@@ -6,22 +6,33 @@ import torch
 from torch.utils.data import Dataset
 
 class VideoTripletDataset(Dataset):
-    def __init__(self, root_dir, transform=None, frame_skip=30):
+    def __init__(self, root_dirs, transform=None, frame_skip=30):
         """
         Args:
-            root_dir (str): Path to the dataset (e.g., .../triplet_dataset/nflx)
+            root_dirs (str | list[str]): One or more dataset roots, each containing
+                                         subfolders with original.mp4 and upscaled.mp4.
             transform (callable, optional): PyTorch transforms to apply to the frames.
-            frame_skip (int): Randomly sample a frame from the first X frames to ensure variety.
+            frame_skip (int): Randomly sample from the first N frames for variety.
         """
-        self.root_dir = root_dir
+        if isinstance(root_dirs, str):
+            root_dirs = [root_dirs]
         self.transform = transform
         self.frame_skip = frame_skip
-        
-        # Find all valid video asset folders
-        self.video_folders = [
-            os.path.join(root_dir, d) for d in os.listdir(root_dir) 
-            if os.path.isdir(os.path.join(root_dir, d))
-        ]
+
+        # Collect every folder that contains both original.mp4 and upscaled.mp4
+        self.video_folders = []
+        for root_dir in root_dirs:
+            if not os.path.isdir(root_dir):
+                continue
+            for d in os.listdir(root_dir):
+                folder = os.path.join(root_dir, d)
+                if (os.path.isdir(folder)
+                        and os.path.exists(os.path.join(folder, "original.mp4"))
+                        and os.path.exists(os.path.join(folder, "upscaled.mp4"))):
+                    self.video_folders.append(folder)
+
+        print(f"[VideoTripletDataset] {len(self.video_folders)} video pairs loaded "
+              f"from {len(root_dirs)} source(s).")
 
     def __len__(self):
         return len(self.video_folders)

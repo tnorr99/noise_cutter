@@ -1,7 +1,33 @@
 import os
 import subprocess
 import shutil
+import time
 from dotenv import load_dotenv
+from tqdm import tqdm
+
+
+def run_esrgan(exe, input_dir, output_dir, bar, label):
+    """Run realesrgan-ncnn-vulkan and track progress by counting output PNGs.
+    Avoids reading stdout/stderr entirely — ESRGAN's self-reported % freezes at ~98%
+    while the process flushes GPU buffers and writes remaining frames to disk."""
+    total = sum(1 for f in os.listdir(input_dir) if f.endswith('.png'))
+
+    proc = subprocess.Popen(
+        [exe, "-i", input_dir, "-o", output_dir,
+         "-n", "realesrgan-x4plus", "-g", "0", "-f", "png"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
+    start = time.time()
+    while proc.poll() is None:
+        done = sum(1 for f in os.listdir(output_dir) if f.endswith('.png'))
+        pct = done / total * 100 if total else 0
+        elapsed = int(time.time() - start)
+        bar.set_postfix_str(f"{label} | ESRGAN {pct:.0f}% | {elapsed}s")
+        time.sleep(0.5)
+
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, exe)
 
 # --- Metadata from NFLX_dataset_public.py ---
 from NFLX_dataset_public import ref_videos, yuv_fmt, width, height
@@ -20,67 +46,70 @@ def get_fps_from_path(path):
 def process_nflx_batch(video_list):
     os.makedirs(OUTPUT_DATASET_DIR, exist_ok=True)
 
-    for video in video_list:
-        asset_name = os.path.basename(video['path']).replace('.yuv', '')
-        fps = get_fps_from_path(video['path'])
-        
-        target_folder = os.path.join(OUTPUT_DATASET_DIR, asset_name)
-        final_upscaled_path = os.path.join(target_folder, "upscaled.mp4")
-        final_original_path = os.path.join(target_folder, "original.mp4")
+    real_esrgan_exe = os.getenv("REAL_ESRGAN_PATH")
 
-        if os.path.exists(final_upscaled_path):
-            continue
+    with tqdm(total=len(video_list), desc="Batch     ", unit="video",
+              position=0, leave=True, dynamic_ncols=True) as batch_bar:
+        for video in video_list:
+            asset_name = os.path.basename(video['path']).replace('.yuv', '')
+            fps = get_fps_from_path(video['path'])
 
-        print(f"\n--- Processing: {asset_name} ({fps} fps) ---")
-        os.makedirs(target_folder, exist_ok=True)
-        
-        tmp_extract_dir = os.path.join(TEMP_DIR_ROOT, "extract")
-        tmp_upscale_dir = os.path.join(TEMP_DIR_ROOT, "upscale")
-        for d in [tmp_extract_dir, tmp_upscale_dir]:
-            if os.path.exists(d): shutil.rmtree(d)
-            os.makedirs(d)
+            target_folder = os.path.join(OUTPUT_DATASET_DIR, asset_name)
+            final_upscaled_path = os.path.join(target_folder, "upscaled.mp4")
+            final_original_path = os.path.join(target_folder, "original.mp4")
 
-        try:
-            # 1. Convert YUV to Lossless MP4 (for the 'Original' reference)
-            # This makes the Blue Team training much faster than reading raw YUV
-            print("Creating lossless original MP4...")
-            orig_cmd = [
-                "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
-                "-s", f"{width}x{height}", "-pix_fmt", yuv_fmt, "-r", fps,
-                "-i", video['path'], "-c:v", "libx264", "-crf", "0", final_original_path
-            ]
-            subprocess.run(orig_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.path.exists(final_upscaled_path):
+                batch_bar.update(1)
+                continue
 
-            # 2. Extract YUV directly to PNG on the SSD
-            print("Extracting YUV frames to SSD...")
-            extract_cmd = [
-                "ffmpeg", "-y", "-f", "rawvideo", "-s", f"{width}x{height}",
-                "-pix_fmt", yuv_fmt, "-r", fps, "-i", video['path'],
-                "-qscale:v", "1", os.path.join(tmp_extract_dir, "frame_%08d.png")
-            ]
-            subprocess.run(extract_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            batch_bar.set_postfix_str(f"{asset_name} ({fps} fps)")
+            os.makedirs(target_folder, exist_ok=True)
 
-            # 3. Upscale (RTX 2060 Super)
-            print("Upscaling...")
-            upscale_cmd = [
-                os.getenv("REAL_ESRGAN_PATH"), "-i", tmp_extract_dir, "-o", tmp_upscale_dir,
-                "-n", "realesrgan-x4plus", "-g", "0", "-f", "png"
-            ]
-            subprocess.run(upscale_cmd, check=True)
+            tmp_extract_dir = os.path.join(TEMP_DIR_ROOT, "extract")
+            tmp_upscale_dir = os.path.join(TEMP_DIR_ROOT, "upscale")
+            for d in [tmp_extract_dir, tmp_upscale_dir]:
+                if os.path.exists(d): shutil.rmtree(d)
+                os.makedirs(d)
 
-            # 4. Merge to Upscaled MP4
-            print("Merging to upscaled MP4...")
-            merge_cmd = [
-                "ffmpeg", "-y", "-framerate", fps,
-                "-i", os.path.join(tmp_upscale_dir, "frame_%08d.png"),
-                "-c:v", "libx264", "-crf", "0", "-pix_fmt", "yuv420p",
-                final_upscaled_path
-            ]
-            subprocess.run(merge_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                # 1. Convert YUV to Lossless MP4 (for the 'Original' reference)
+                batch_bar.set_description("Orig MP4  ")
+                orig_cmd = [
+                    "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
+                    "-s", f"{width}x{height}", "-pix_fmt", yuv_fmt, "-r", fps,
+                    "-i", video['path'], "-c:v", "libx264", "-crf", "0", final_original_path
+                ]
+                subprocess.run(orig_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        finally:
-            shutil.rmtree(tmp_extract_dir, ignore_errors=True)
-            shutil.rmtree(tmp_upscale_dir, ignore_errors=True)
+                # 2. Extract YUV directly to PNG on the SSD
+                batch_bar.set_description("Extracting")
+                extract_cmd = [
+                    "ffmpeg", "-y", "-f", "rawvideo", "-s", f"{width}x{height}",
+                    "-pix_fmt", yuv_fmt, "-r", fps, "-i", video['path'],
+                    "-qscale:v", "1", os.path.join(tmp_extract_dir, "frame_%08d.png")
+                ]
+                subprocess.run(extract_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                # 3. Upscale — polls every 0.5s so the bar stays live
+                batch_bar.set_description("Upscaling ")
+                run_esrgan(real_esrgan_exe, tmp_extract_dir, tmp_upscale_dir,
+                           batch_bar, asset_name)
+
+                # 4. Merge to Upscaled MP4
+                batch_bar.set_description("Encoding  ")
+                merge_cmd = [
+                    "ffmpeg", "-y", "-framerate", fps,
+                    "-i", os.path.join(tmp_upscale_dir, "frame_%08d.png"),
+                    "-c:v", "libx264", "-crf", "0", "-pix_fmt", "yuv420p",
+                    final_upscaled_path
+                ]
+                subprocess.run(merge_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            finally:
+                batch_bar.set_description("Batch     ")
+                batch_bar.update(1)
+                shutil.rmtree(tmp_extract_dir, ignore_errors=True)
+                shutil.rmtree(tmp_upscale_dir, ignore_errors=True)
 
 if __name__ == "__main__":
     # You can import your ref_videos list here

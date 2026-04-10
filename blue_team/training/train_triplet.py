@@ -13,11 +13,16 @@ from blue_team.data_loaders.triplet_loader import VideoTripletDataset
 from blue_team.models.DML import VideoFeatureExtractor
 
 # --- Configuration ---
-DATASET_DIR = r"C:\Users\tnorr\OneDrive\Documents\AI\noise_cutter\data\triplet_dataset\NFLX\ref"
+# All dataset roots to train on — add new upscaled datasets here as they become available
+DATASET_DIRS = [
+    r"C:\Users\tnorr\OneDrive\Documents\AI\noise_cutter\data\triplet_dataset\NFLX\ref",
+    r"C:\Users\tnorr\OneDrive\Documents\AI\noise_cutter\data\triplet_dataset\waterloo",
+]
 CHECKPOINT_DIR = r"C:\Users\tnorr\OneDrive\Documents\AI\noise_cutter\blue_team\training\checkpoints"
+RESUME_CHECKPOINT = os.path.join(CHECKPOINT_DIR, "model_best.pth")  # set to "" to train from scratch
 
 BATCH_SIZE = 16  # Adjust based on your RTX 2060 Super's VRAM limits
-EPOCHS = 20
+EPOCHS = 40      # Total epochs including any resumed run
 LEARNING_RATE = 0.0001
 
 def save_checkpoint(state, is_best, filename="checkpoint.pth"):
@@ -35,26 +40,38 @@ def train_model():
     print(f"Initializing training on: {device}")
 
     transform = transforms.Compose([
-        # RandomResizedCrop simulates looking at different "grid" scales of the image
-        transforms.RandomResizedCrop(size=(224, 224), scale=(0.3, 1.0)), 
+        transforms.RandomResizedCrop(size=(224, 224), scale=(0.3, 1.0)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    
-    dataset = VideoTripletDataset(root_dir=DATASET_DIR, transform=transform)
+
+    dataset = VideoTripletDataset(root_dirs=DATASET_DIRS, transform=transform)
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
 
     # 3. Initialize Model, Loss, and Optimizer
     model = VideoFeatureExtractor(pretrained=False).to(device)
-    model.train() # Set to training mode
-
     triplet_loss_fn = nn.TripletMarginLoss(margin=0.2, p=2)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
+    start_epoch = 0
     best_loss = float('inf')
 
+    # Resume from checkpoint if available
+    if RESUME_CHECKPOINT and os.path.exists(RESUME_CHECKPOINT):
+        print(f"Resuming from checkpoint: {RESUME_CHECKPOINT}")
+        ckpt = torch.load(RESUME_CHECKPOINT, map_location=device)
+        model.load_state_dict(ckpt['state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer'])
+        start_epoch = ckpt['epoch']
+        best_loss = ckpt.get('best_loss', float('inf'))
+        print(f"  Resumed at epoch {start_epoch}, best loss so far: {best_loss:.4f}")
+    else:
+        print("Starting fresh training run.")
+
+    model.train()
+
     # 4. The Training Loop
-    for epoch in range(EPOCHS):
+    for epoch in range(start_epoch, EPOCHS):
         print(f"\n--- Epoch {epoch+1}/{EPOCHS} ---")
         epoch_loss = 0.0
 
